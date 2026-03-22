@@ -16,7 +16,7 @@ pip install customtkinter pillow pyinstaller
 ```
 ### 2. Run the Script
 ```bash
-python make_avatar.py
+python avatar_maker.py
 ```
 ### 3. Build to EXE
 To create a standalone Windows application, use the following command:
