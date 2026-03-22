@@ -1,16 +1,18 @@
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, colorchooser
 import customtkinter as ctk
 from PIL import Image
 
-def process_avatar(skin_path):
+def process_avatar(skin_path, use_outline=True, outline_color=(0, 0, 0)):
     try:
         skin = Image.open(skin_path).convert("RGBA")
         canvas = Image.new("RGBA", (37, 37), (0, 0, 0, 0))
         
         parts_grid = [[0 for _ in range(37)] for _ in range(37)]
         color_grid = [[(0,0,0,0) for _ in range(37)] for _ in range(37)]
+        
+        render_outline_color = (outline_color[0], outline_color[1], outline_color[2], 255)
 
         def get_texel(x, y):
             if 0 <= x < skin.width and 0 <= y < skin.height:
@@ -21,9 +23,11 @@ def process_avatar(skin_path):
             if color[3] == 0: return color
             return (int(color[0] * factor), int(color[1] * factor), int(color[2] * factor), color[3])
 
+        y_offset = 0 if use_outline else 1
+
         for py in range(37):
             for px in range(37):
-                x, y = px - 6, py - 5 
+                x, y = px - 6, py - 5 - y_offset
                 final_color, part_id = (0, 0, 0, 0), 0
 
                 if 18 <= x < 27 and 17 <= y < 31:
@@ -61,7 +65,7 @@ def process_avatar(skin_path):
                     if c[3] >= 25: final_color, part_id = c, 3
 
                 if (part_id == 0 or final_color[3] < 25):
-                    lx, ly = px - 3, py - 5
+                    lx, ly = px - 3, py - 5 - y_offset
                     if 0 <= lx < 6 and 17 <= ly < 31:
                         c = get_texel(lx // 2 + 44, (ly - 17) // 2 + 36)
                         if c[3] < 25: c = get_texel(lx // 2 + 44, (ly - 17) // 2 + 20)
@@ -74,36 +78,41 @@ def process_avatar(skin_path):
                 curr_id = parts_grid[py][px]
                 if curr_id == 0:
                     is_ext = False
-                    for dy in [-1, 0, 1]:
-                        for dx in [-1, 0, 1]:
-                            if dy == 0 and dx == 0: continue
-                            if 0 <= py+dy < 37 and 0 <= px+dx < 37:
-                                nb_id = parts_grid[py+dy][px+dx]
-                                if nb_id != 0:
-                                    if abs(dx) + abs(dy) == 2:
-                                        if dy == -1 and nb_id in [1, 3, 4]: is_ext = True
-                                    else: is_ext = True
+                    if use_outline:
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                if dy == 0 and dx == 0: continue
+                                if 0 <= py+dy < 37 and 0 <= px+dx < 37:
+                                    nb_id = parts_grid[py+dy][px+dx]
+                                    if nb_id != 0:
+                                        if abs(dx) + abs(dy) == 2:
+                                            if dy == -1 and nb_id in [1, 3, 4]: is_ext = True
+                                        else: is_ext = True
+                                if is_ext: break
                             if is_ext: break
-                        if is_ext: break
-                    if is_ext: canvas.putpixel((px, py), (0, 0, 0, 255))
+                    if is_ext: canvas.putpixel((px, py), render_outline_color)
                 else:
                     is_outline = False
-                    for dy in [-1, 0, 1]:
-                        for dx in [-1, 0, 1]:
-                            if dy == 0 and dx == 0: continue
-                            if 0 <= py+dy < 37 and 0 <= px+dx < 37:
-                                nb_id = parts_grid[py+dy][px+dx]
-                                if nb_id != 0 and nb_id != curr_id:
-                                    if curr_id == 2 and nb_id == 1:
-                                        if abs(dx) + abs(dy) == 1: is_outline = True
-                                    elif curr_id in [1, 4] and nb_id == 3: is_outline = True
-                                    elif nb_id == 2 and curr_id != 2 and curr_id != 1: is_outline = True
-                                    if is_outline: break
-                        if is_outline: break
-                    if is_outline: canvas.putpixel((px, py), (0, 0, 0, 255))
+                    if use_outline:
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                if dy == 0 and dx == 0: continue
+                                if 0 <= py+dy < 37 and 0 <= px+dx < 37:
+                                    nb_id = parts_grid[py+dy][px+dx]
+                                    if nb_id != 0 and nb_id != curr_id:
+                                        if curr_id == 2 and nb_id == 1:
+                                            if abs(dx) + abs(dy) == 1: is_outline = True
+                                        elif curr_id in [1, 4] and nb_id == 3: is_outline = True
+                                        elif nb_id == 2 and curr_id != 2 and curr_id != 1: is_outline = True
+                                        if is_outline: break
+                            if is_outline: break
+                    
+                    if is_outline:
+                        canvas.putpixel((px, py), render_outline_color)
                     else:
                         c = color_grid[py][px]
-                        canvas.putpixel((px, py), (c[0], c[1], c[2], 255))
+                        if c[3] >= 25:
+                            canvas.putpixel((px, py), (c[0], c[1], c[2], 255))
         return canvas
     except Exception as e:
         messagebox.showerror("Error", f"Processing failed: {e}")
@@ -114,12 +123,16 @@ class AvatarApp(ctk.CTk):
         super().__init__()
 
         self.title("Avatar Maker")
-        self.geometry("450x580")
+        self.geometry("450x720")
         self.resizable(False, False)
         ctk.set_appearance_mode("dark")
 
         self.current_skin_path = None
         self.result_image = None
+        
+        self.outline_var = tk.BooleanVar(value=True)
+        self.mirror_var = tk.BooleanVar(value=False)
+        self.outline_color = (0, 0, 0)
 
         self.label = ctk.CTkLabel(self, text="AVATAR GENERATOR", font=("Arial", 20, "bold"))
         self.label.pack(pady=20)
@@ -131,14 +144,30 @@ class AvatarApp(ctk.CTk):
         self.preview_label = ctk.CTkLabel(self.preview_frame, text="No Image")
         self.preview_label.pack(expand=True, fill="both")
 
+        self.check_outline = ctk.CTkCheckBox(self, text="Enable Outline", variable=self.outline_var, command=self.update_preview)
+        self.check_outline.pack(pady=5)
+
+        self.btn_color = ctk.CTkButton(self, text="Outline Color", fg_color="gray30", command=self.choose_color)
+        self.btn_color.pack(pady=5)
+
+        self.check_mirror = ctk.CTkCheckBox(self, text="Mirror Image", variable=self.mirror_var, command=self.update_preview)
+        self.check_mirror.pack(pady=5)
+
         self.btn_select = ctk.CTkButton(self, text="Select Skin", command=self.select_skin)
-        self.btn_select.pack(pady=10)
+        self.btn_select.pack(pady=15)
 
         self.btn_save = ctk.CTkButton(self, text="Save Result", command=self.save_avatar, state="disabled")
-        self.btn_save.pack(pady=10)
+        self.btn_save.pack(pady=5)
 
         self.info_label = ctk.CTkLabel(self, text="Ready", font=("Arial", 11))
         self.info_label.pack(side="bottom", pady=10)
+
+    def choose_color(self):
+        color_code = colorchooser.askcolor(title="Choose Outline Color", initialcolor="#000000")
+        if color_code[0]:
+            self.outline_color = tuple(map(int, color_code[0]))
+            self.btn_color.configure(border_color=color_code[1], border_width=2)
+            self.update_preview()
 
     def select_skin(self):
         file_path = filedialog.askopenfilename(filetypes=[("PNG images", "*.png")])
@@ -146,9 +175,20 @@ class AvatarApp(ctk.CTk):
             self.current_skin_path = file_path
             self.generate_preview()
 
+    def update_preview(self):
+        if self.current_skin_path:
+            self.generate_preview()
+
     def generate_preview(self):
-        res = process_avatar(self.current_skin_path)
+        res = process_avatar(
+            self.current_skin_path, 
+            use_outline=self.outline_var.get(),
+            outline_color=self.outline_color
+        )
         if res:
+            if self.mirror_var.get():
+                res = res.transpose(Image.FLIP_LEFT_RIGHT)
+            
             self.result_image = res
             upscaled_preview = res.resize((300, 300), Image.NEAREST)
             ctk_preview = ctk.CTkImage(light_image=upscaled_preview, 
